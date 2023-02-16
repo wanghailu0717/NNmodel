@@ -36,7 +36,7 @@ transform = transforms.Compose([
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)), # 归一化
                              ])
 trainset = torchvision.datasets.CIFAR10(
-                    root='./data', 
+                    root='../data', 
                     train=True, 
                     download=True,
                     transform=transform)
@@ -46,7 +46,7 @@ trainloader = torch.utils.data.DataLoader(
                     shuffle=True, 
                     num_workers=2)
 testset = torchvision.datasets.CIFAR10(
-                    './data',
+                    '../data',
                     train=False, 
                     download=True, 
                     transform=transform)
