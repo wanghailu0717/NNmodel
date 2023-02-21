@@ -1,0 +1,3 @@
+[submodule "YOLO/YOLOv1-from-scratch"]
+	path = YOLO/YOLOv1-from-scratch
+	url = git@github.com:wanghailu0717/YOLOv1-from-scratch.git
