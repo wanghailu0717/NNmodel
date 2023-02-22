@@ -8,6 +8,10 @@ import torchvision
 import torchvision.transforms as transforms
 from torchvision.transforms import ToPILImage
 import time
+# 引入onnx 相关工具
+import onnx
+from onnx import version_converter
+from onnx2torch import convert
 
 # 定义网络并显示
 class BasicBlock(nn.Module):
@@ -153,7 +157,8 @@ def resnet152():
     """ return a ResNet 152 object
     """
     return ResNet(BottleNeck, [3, 8, 36, 3], 10)
-net = resnet152()
+
+net = resnet18()
 
 # 定义数据预处理方式以及训练集与测试集并进行下载
 transform = transforms.Compose([
@@ -184,18 +189,17 @@ testloader = torch.utils.data.DataLoader(
 # 定义损失函数与优化器
 criterion = nn.CrossEntropyLoss() # 交叉熵损失函数
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+
 # 定义硬件设备
-device = torch.device("cpu")
+device = torch.device("mlu")
 net = net.to(device)
 
 # 网络训练
 start = time.time()
-for epoch in range(2):  
+for epoch in range(1):  
     running_loss = 0.0
     start_0 = time.time()
     for i, data in enumerate(trainloader, 0):
-        if i % 97 != 0:
-            continue
         # 输入数据
         inputs, labels = data
         inputs = inputs.to(device)
@@ -221,6 +225,7 @@ print('Finished Training: ' + str(end- start) + 's')
 # 网络推理
 correct = 0 # 预测正确的图片数
 total = 0 # 总共的图片数
+
 # 由于测试的时候不需要求导，可以暂时关闭autograd，提高速度，节约内存
 with torch.no_grad():
     for data in testloader:
@@ -231,5 +236,29 @@ with torch.no_grad():
         _, predicted = torch.max(outputs, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum()
-
 print('10000张测试集中的准确率为: %d %%' % (100 * correct / total))
+
+# 网络存储与再捞回
+input_rand = torch.zeros((1,3,32,32))
+net = net.to("cpu")
+torch.onnx.export(net, input_rand, 'resnet18.onnx', input_names = ["image"], output_names = ["label"])
+model = onnx.load('./resnet18.onnx')
+
+# 将模型转换为对应版本
+target_version = 13
+converted_model = version_converter.convert_version(model, target_version)
+torch_model = convert(converted_model)
+torch_model.to(device)
+
+# 运行刚才加载并转换的模型, 验证是否一致
+with torch.no_grad():
+    for data in testloader:
+        images, labels = data
+        images = images.to(device)
+        labels = labels.to(device)
+        outputs = torch_model(images)
+        _, predicted = torch.max(outputs, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum()
+print('10000张测试集中的准确率为: %d %%' % (100 * correct / total))
+
