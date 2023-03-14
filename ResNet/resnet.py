@@ -191,7 +191,8 @@ criterion = nn.CrossEntropyLoss() # 交叉熵损失函数
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
 # 定义硬件设备
-device = torch.device("mlu")
+print(torch.cuda.is_available())
+device = torch.device("cuda")
 net = net.to(device)
 
 # 网络训练
@@ -243,6 +244,8 @@ input_rand = torch.zeros((1,3,32,32))
 net = net.to("cpu")
 torch.onnx.export(net, input_rand, 'resnet18.onnx', input_names = ["image"], output_names = ["label"])
 model = onnx.load('./resnet18.onnx')
+
+# 本项目对模型进行优化
 
 # 将模型转换为对应版本
 target_version = 13
