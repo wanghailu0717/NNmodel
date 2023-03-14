@@ -183,7 +183,7 @@ testset = torchvision.datasets.CIFAR10(
                     transform=transform)
 testloader = torch.utils.data.DataLoader(
                     testset,
-                    batch_size=4, 
+                    batch_size=1, 
                     shuffle=False,
                     num_workers=2)
 
@@ -197,32 +197,32 @@ device = torch.device("cuda")
 net = net.to(device)
 
 # # 网络训练
-# start = time.time()
-# for epoch in range(1):  
-#     running_loss = 0.0
-#     start_0 = time.time()
-#     for i, data in enumerate(trainloader, 0):
-#         # 输入数据
-#         inputs, labels = data
-#         inputs = inputs.to(device)
-#         labels = labels.to(device)
-#         # 梯度清零
-#         optimizer.zero_grad()
-#         # 前向传播、计算损失、反向计算、参数更新
-#         outputs = net(inputs)
-#         loss = criterion(outputs, labels)
-#         loss.backward()
-#         optimizer.step()
-#         # 打印日志
-#         running_loss += loss.item()
-#         if i % 2000 == 1999: # 每2000个batch打印一下训练状态
-#             end_2000 = time.time()
-#             print('[%d, %5d] loss: %.3f take %.5f s' \
-#                   % (epoch+1, i+1, running_loss / 2000, (end_2000-start_0)))
-#             running_loss = 0.0
-#             start_0 = time.time()
-# end = time.time()
-# print('Finished Training: ' + str(end- start) + 's')
+start = time.time()
+for epoch in range(6):  
+    running_loss = 0.0
+    start_0 = time.time()
+    for i, data in enumerate(trainloader, 0):
+        # 输入数据
+        inputs, labels = data
+        inputs = inputs.to(device)
+        labels = labels.to(device)
+        # 梯度清零
+        optimizer.zero_grad()
+        # 前向传播、计算损失、反向计算、参数更新
+        outputs = net(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        # 打印日志
+        running_loss += loss.item()
+        if i % 2000 == 1999: # 每2000个batch打印一下训练状态
+            end_2000 = time.time()
+            print('[%d, %5d] loss: %.3f take %.5f s' \
+                  % (epoch+1, i+1, running_loss / 2000, (end_2000-start_0)))
+            running_loss = 0.0
+            start_0 = time.time()
+end = time.time()
+print('Finished Training: ' + str(end- start) + 's')
 
 # 网络推理
 correct = 0 # 预测正确的图片数
@@ -238,7 +238,7 @@ with torch.no_grad():
         _, predicted = torch.max(outputs, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum()
-print('10000张测试集中的准确率为: %d %%' % (100 * correct / total))
+print('10000张测试集中的准确率为: %f %%' % (100 * correct / total))
 
 # 网络存储与再捞回
 input_rand = torch.zeros((1,3,32,32))
@@ -246,28 +246,23 @@ net = net.to("cpu")
 torch.onnx.export(net, input_rand, 'resnet18.onnx', input_names = ["image"], output_names = ["label"])
 model = onnx.load('./resnet18.onnx')
 
-# # 本项目对模型进行优化
-# model, check = simplify(model)
-# from pyinfinitensor.onnx import OnnxStub, cuda_runtime
-# gofusion_model = OnnxStub(model, cuda_runtime())
-# gofusion_model = gofusion_model.to_onnx("resent18_new")
-# model = gofusion_model
+# 本项目对模型进行优化
+model, check = simplify(model)
+from pyinfinitensor.onnx import OnnxStub, cuda_runtime
+gofusion_model = OnnxStub(model, cuda_runtime())
+model = gofusion_model
 
-# 将模型转换为对应版本
-target_version = 13
-converted_model = version_converter.convert_version(model, target_version)
-torch_model = convert(converted_model)
-torch_model.to(device)
-
-# 运行刚才加载并转换的模型, 验证是否一致
+# 使用本项目的 Runtime 运行刚才加载并转换的模型, 验证是否一致
 with torch.no_grad():
     for data in testloader:
         images, labels = data
-        images = images.to(device)
-        labels = labels.to(device)
-        outputs = torch_model(images)
+        model.put_float(next(model.inputs.keys().__iter__()), images.reshape(-1).tolist())
+        model.run()
+        outputs = model.take_float()
+        outputs = torch.tensor(outputs)
+        outputs = torch.reshape(outputs,(1,10))
         _, predicted = torch.max(outputs, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum()
-print('10000张测试集中的准确率为: %d %%' % (100 * correct / total))
+print('10000张测试集中的准确率为: %f %%' % (100 * correct / total))
 
