@@ -1,3 +1,6 @@
 [submodule "YOLO/YOLOv1-from-scratch"]
 	path = YOLO/YOLOv1-from-scratch
 	url = git@github.com:wanghailu0717/YOLOv1-from-scratch.git
+[submodule "CSRNet/CSRNet-pytorch"]
+	path = CSRNet/CSRNet-pytorch
+	url = git@github.com:wanghailu0717/CSRNet-pytorch.git
