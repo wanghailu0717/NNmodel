@@ -8,6 +8,11 @@ import torchvision
 import torchvision.transforms as transforms
 from torchvision.transforms import ToPILImage
 import time
+# 引入onnx 相关工具
+import onnx
+from onnxsim import simplify
+from onnx import version_converter
+from onnx2torch import convert
 
 # 定义网络并显示
 class Bottleneck(nn.Module):
@@ -143,7 +148,7 @@ testset = torchvision.datasets.CIFAR10(
                     transform=transform)
 testloader = torch.utils.data.DataLoader(
                     testset,
-                    batch_size=4, 
+                    batch_size=1, 
                     shuffle=False,
                     num_workers=2)
 
@@ -151,7 +156,7 @@ testloader = torch.utils.data.DataLoader(
 criterion = nn.CrossEntropyLoss() # 交叉熵损失函数
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 # 定义硬件设备
-device = torch.device("mlu")
+device = torch.device("cuda")
 net = net.to(device)
 
 # 网络训练
@@ -182,7 +187,7 @@ for epoch in range(2):
 end = time.time()
 print('Finished Training: ' + str(end- start) + 's')
 
-# 网络推理
+网络推理
 correct = 0 # 预测正确的图片数
 total = 0 # 总共的图片数
 # 由于测试的时候不需要求导，可以暂时关闭autograd，提高速度，节约内存
@@ -197,3 +202,31 @@ with torch.no_grad():
         correct += (predicted == labels).sum()
 
 print('10000张测试集中的准确率为: %d %%' % (100 * correct / total))
+
+# 网络存储与再捞回
+input_rand = torch.zeros((1,3,32,32))
+net = net.to("cpu")
+torch.onnx.export(net, input_rand, 'densenet.onnx', input_names = ["image"], output_names = ["label"])
+model = onnx.load('./densenet.onnx')
+
+# 本项目对模型进行优化
+model, check = simplify(model)
+from pyinfinitensor.onnx import OnnxStub, cuda_runtime
+gofusion_model = OnnxStub(model, cuda_runtime())
+model = gofusion_model
+
+correct = 0 # 预测正确的图片数
+total = 0 # 总共的图片数
+# 使用本项目的 Runtime 运行刚才加载并转换的模型, 验证是否一致
+with torch.no_grad():
+    for data in testloader:
+        images, labels = data
+        model.put_float(next(model.inputs.keys().__iter__()), images.reshape(-1).tolist())
+        model.run()
+        outputs = model.take_float()
+        outputs = torch.tensor(outputs)
+        outputs = torch.reshape(outputs,(1,10))
+        _, predicted = torch.max(outputs, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum()
+print('10000张测试集中的准确率为: %f %%' % (100 * correct / total))
