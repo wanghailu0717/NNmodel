@@ -252,6 +252,8 @@ from pyinfinitensor.onnx import OnnxStub, cuda_runtime
 gofusion_model = OnnxStub(model, cuda_runtime())
 model = gofusion_model
 
+correct = 0 # 预测正确的图片数
+total = 0 # 总共的图片数
 # 使用本项目的 Runtime 运行刚才加载并转换的模型, 验证是否一致
 with torch.no_grad():
     for data in testloader:

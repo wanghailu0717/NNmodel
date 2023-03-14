@@ -201,7 +201,7 @@ with torch.no_grad():
         total += labels.size(0)
         correct += (predicted == labels).sum()
 
-print('10000张测试集中的准确率为: %d %%' % (100 * correct / total))
+print('10000张测试集中的准确率为: %f %%' % (100 * correct / total))
 
 # 网络存储与再捞回
 input_rand = torch.zeros((1,3,32,32))

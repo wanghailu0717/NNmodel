@@ -8,6 +8,11 @@ import torchvision
 import torchvision.transforms as transforms
 from torchvision.transforms import ToPILImage
 import time
+# 引入onnx 相关工具
+import onnx
+from onnxsim import simplify
+from onnx import version_converter
+from onnx2torch import convert
 
 # 定义网络并显示
 class BasicConv2d(nn.Module):
@@ -358,7 +363,7 @@ testloader = torch.utils.data.DataLoader(
 criterion = nn.CrossEntropyLoss() # 交叉熵损失函数
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 # 定义硬件设备
-device = torch.device("mlu")
+device = torch.device("cuda")
 net = net.to(device)
 
 # 网络训练
@@ -403,4 +408,32 @@ with torch.no_grad():
         total += labels.size(0)
         correct += (predicted == labels).sum()
 
-print('10000张测试集中的准确率为: %d %%' % (100 * correct / total))
+print('10000张测试集中的准确率为: %f %%' % (100 * correct / total))
+
+# 网络存储与再捞回
+input_rand = torch.zeros((1,3,32,32))
+net = net.to("cpu")
+torch.onnx.export(net, input_rand, 'inceptionv3.onnx', input_names = ["image"], output_names = ["label"])
+model = onnx.load('./inceptionv3.onnx')
+
+# 本项目对模型进行优化
+model, check = simplify(model)
+from pyinfinitensor.onnx import OnnxStub, cuda_runtime
+gofusion_model = OnnxStub(model, cuda_runtime())
+model = gofusion_model
+
+correct = 0 # 预测正确的图片数
+total = 0 # 总共的图片数
+# 使用本项目的 Runtime 运行刚才加载并转换的模型, 验证是否一致
+with torch.no_grad():
+    for data in testloader:
+        images, labels = data
+        model.put_float(next(model.inputs.keys().__iter__()), images.reshape(-1).tolist())
+        model.run()
+        outputs = model.take_float()
+        outputs = torch.tensor(outputs)
+        outputs = torch.reshape(outputs,(1,10))
+        _, predicted = torch.max(outputs, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum()
+print('10000张测试集中的准确率为: %f %%' % (100 * correct / total))
