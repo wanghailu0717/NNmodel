@@ -193,36 +193,36 @@ optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
 # 定义硬件设备
 print(torch.cuda.is_available())
-device = torch.device("cuda")
+device = torch.device("mlu")
 net = net.to(device)
 
 # # 网络训练
-start = time.time()
-for epoch in range(6):  
-    running_loss = 0.0
-    start_0 = time.time()
-    for i, data in enumerate(trainloader, 0):
-        # 输入数据
-        inputs, labels = data
-        inputs = inputs.to(device)
-        labels = labels.to(device)
-        # 梯度清零
-        optimizer.zero_grad()
-        # 前向传播、计算损失、反向计算、参数更新
-        outputs = net(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        # 打印日志
-        running_loss += loss.item()
-        if i % 2000 == 1999: # 每2000个batch打印一下训练状态
-            end_2000 = time.time()
-            print('[%d, %5d] loss: %.3f take %.5f s' \
-                  % (epoch+1, i+1, running_loss / 2000, (end_2000-start_0)))
-            running_loss = 0.0
-            start_0 = time.time()
-end = time.time()
-print('Finished Training: ' + str(end- start) + 's')
+# start = time.time()
+# for epoch in range(6):  
+#     running_loss = 0.0
+#     start_0 = time.time()
+#     for i, data in enumerate(trainloader, 0):
+#         # 输入数据
+#         inputs, labels = data
+#         inputs = inputs.to(device)
+#         labels = labels.to(device)
+#         # 梯度清零
+#         optimizer.zero_grad()
+#         # 前向传播、计算损失、反向计算、参数更新
+#         outputs = net(inputs)
+#         loss = criterion(outputs, labels)
+#         loss.backward()
+#         optimizer.step()
+#         # 打印日志
+#         running_loss += loss.item()
+#         if i % 2000 == 1999: # 每2000个batch打印一下训练状态
+#             end_2000 = time.time()
+#             print('[%d, %5d] loss: %.3f take %.5f s' \
+#                   % (epoch+1, i+1, running_loss / 2000, (end_2000-start_0)))
+#             running_loss = 0.0
+#             start_0 = time.time()
+# end = time.time()
+# print('Finished Training: ' + str(end- start) + 's')
 
 # 网络推理
 correct = 0 # 预测正确的图片数
@@ -252,19 +252,49 @@ from pyinfinitensor.onnx import OnnxStub, cuda_runtime
 gofusion_model = OnnxStub(model, cuda_runtime())
 model = gofusion_model
 
+###################################################################################
+# Pytorch 运行
+# 将模型转换为对应版本
+target_version = 13
+converted_model = version_converter.convert_version(model, target_version)
+torch_model = convert(converted_model)
+torch_model.to(device)
+# 由于测试的时候不需要求导，可以暂时关闭autograd，提高速度，节约内存
 correct = 0 # 预测正确的图片数
 total = 0 # 总共的图片数
-# 使用本项目的 Runtime 运行刚才加载并转换的模型, 验证是否一致
+total_time = 0.0
 with torch.no_grad():
     for data in testloader:
         images, labels = data
-        model.put_float(next(model.inputs.keys().__iter__()), images.reshape(-1).tolist())
-        model.run()
-        outputs = model.take_float()
-        outputs = torch.tensor(outputs)
-        outputs = torch.reshape(outputs,(1,10))
+        images = images.to(device)
+        labels = labels.to(device)
+        start_time = time.time()
+        outputs = net(images)
+        end_time = time.time()
+        total_time += (end_time - start_time)
         _, predicted = torch.max(outputs, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum()
 print('10000张测试集中的准确率为: %f %%' % (100 * correct / total))
+print('BatchSize = %d, Pytorch 推理耗时 %f s' % (labels.size(0), total_time / (total / (labels.size(0)))))
+
+correct = 0 # 预测正确的图片数
+total = 0 # 总共的图片数
+total_time = 0.0
+# 使用本项目的 Runtime 运行刚才加载并转换的模型, 验证是否一致
+for data in testloader:
+    images, labels = data
+    model.put_float(next(model.inputs.keys().__iter__()), images.reshape(-1).tolist())
+    start_time = time.time()
+    model.run()
+    end_time = time.time()
+    outputs = model.take_float()
+    outputs = torch.tensor(outputs)
+    outputs = torch.reshape(outputs,(1,10))
+    total_time += (end_time - start_time)
+    _, predicted = torch.max(outputs, 1)
+    total += labels.size(0)
+    correct += (predicted == labels).sum()
+print('10000张测试集中的准确率为: %f %%' % (100 * correct / total))
+print('BatchSize = %d, GoFusion 推理耗时 %f s' % (labels.size(0), total_time / (total / (labels.size(0)))))
 
