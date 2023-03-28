@@ -248,9 +248,9 @@ model = onnx.load('./resnet18.onnx')
 
 # 本项目对模型进行优化
 model, check = simplify(model)
-from pyinfinitensor.onnx import OnnxStub, cuda_runtime
-gofusion_model = OnnxStub(model, cuda_runtime())
-model = gofusion_model
+# from pyinfinitensor.onnx import OnnxStub, cuda_runtime
+# gofusion_model = OnnxStub(model, cuda_runtime())
+# model = gofusion_model
 
 ###################################################################################
 # Pytorch 运行
@@ -269,7 +269,7 @@ with torch.no_grad():
         images = images.to(device)
         labels = labels.to(device)
         start_time = time.time()
-        outputs = net(images)
+        outputs = torch_model(images)
         end_time = time.time()
         total_time += (end_time - start_time)
         _, predicted = torch.max(outputs, 1)
