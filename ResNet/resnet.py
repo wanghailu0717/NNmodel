@@ -284,11 +284,11 @@ total_time = 0.0
 # 使用本项目的 Runtime 运行刚才加载并转换的模型, 验证是否一致
 for data in testloader:
     images, labels = data
-    model.put_float(next(model.inputs.keys().__iter__()), images.reshape(-1).tolist())
+    next(model.inputs.items().__iter__())[1].copyin_float(images.reshape(-1).tolist())
     start_time = time.time()
     model.run()
     end_time = time.time()
-    outputs = model.take_float()
+    outputs = next(model.outputs.items().__iter__())[1].copyin_float()
     outputs = torch.tensor(outputs)
     outputs = torch.reshape(outputs,(1,10))
     total_time += (end_time - start_time)
