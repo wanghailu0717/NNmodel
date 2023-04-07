@@ -136,7 +136,6 @@ if args.train_epoch != 0:
 # 
 # print('10000张测试集中的准确率为: %d %%' % (100 * correct / total))
 
-
 ###################################################################################
 # Gofusion 运行
 if args.gofusion_infer == "True":
@@ -149,7 +148,7 @@ if args.gofusion_infer == "True":
     from pyinfinitensor.onnx import OnnxStub, backend
     gofusion_model = OnnxStub(model, backend.bang_runtime())
     model = gofusion_model
-    print("[INFO] Gofusion strat infer " + 'lent' + " network on " + args.which_device)
+    print("[INFO] Gofusion strat infer " + 'lenet' + " network on " + args.which_device)
     correct = 0 # 预测正确的图片数
     total = 0 # 总共的图片数
     total_time = 0.0
