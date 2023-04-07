@@ -278,6 +278,41 @@ if args.train_epoch != 0:
 # print('10000张测试集中的准确率为: %f %%' % (100 * correct / total))
 
 ###################################################################################
+# Gofusion 运行
+if args.gofusion_infer == "True":
+    if len(args.onnx_file) != 0:
+        model = onnx.load(args.onnx_file)
+    else:
+        model = onnx.load('./'+ args.which_net +'.onnx')
+    model, check = simplify(model)
+
+    from pyinfinitensor.onnx import OnnxStub, backend
+    gofusion_model = OnnxStub(model, backend.bang_runtime())
+    model = gofusion_model
+    print("[INFO] Gofusion strat infer " + args.which_net + " network on " + args.which_device)
+    correct = 0 # 预测正确的图片数
+    total = 0 # 总共的图片数
+    total_time = 0.0
+    # 使用本项目的 Runtime 运行刚才加载并转换的模型, 验证是否一致
+    for data in tqdm(testloader):
+        images, labels = data
+        next(model.inputs.items().__iter__())[1].copyin_float(images.reshape(-1).tolist())
+        start_time = time.time()
+        model.init()
+        model.run()
+        end_time = time.time()
+        outputs = next(model.outputs.items().__iter__())[1].copyout_float()
+        outputs = torch.tensor(outputs)
+        outputs = torch.reshape(outputs,(1,10))
+        total_time += (end_time - start_time)
+        _, predicted = torch.max(outputs, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum()
+    print('%d 张测试的准确率为: %f %%' % (total, 100 * correct / total))
+    print('BatchSize = %d, GoFusion 推理耗时 %f s' % (labels.size(0), total_time / (total / (labels.size(0)))))
+    del model, gofusion_model
+
+###################################################################################
 # Pytorch 运行
 # 将模型转换为对应版本
 if args.pytorch_infer == "True":
@@ -312,37 +347,3 @@ if args.pytorch_infer == "True":
     print('BatchSize = %d, Pytorch 推理耗时 %f s' % (labels.size(0), total_time / (total / (labels.size(0)))))
     del torch_model, model
 
-###################################################################################
-# Gofusion 运行
-if args.gofusion_infer == "True":
-    if len(args.onnx_file) != 0:
-        model = onnx.load(args.onnx_file)
-    else:
-        model = onnx.load('./'+ args.which_net +'.onnx')
-    model, check = simplify(model)
-
-    from pyinfinitensor.onnx import OnnxStub, backend
-    gofusion_model = OnnxStub(model, backend.bang_runtime())
-    model = gofusion_model
-    print("[INFO] Gofusion strat infer " + args.which_net + " network on " + args.which_device)
-    correct = 0 # 预测正确的图片数
-    total = 0 # 总共的图片数
-    total_time = 0.0
-    # 使用本项目的 Runtime 运行刚才加载并转换的模型, 验证是否一致
-    for data in tqdm(testloader):
-        images, labels = data
-        next(model.inputs.items().__iter__())[1].copyin_float(images.reshape(-1).tolist())
-        start_time = time.time()
-        model.init()
-        model.run()
-        end_time = time.time()
-        outputs = next(model.outputs.items().__iter__())[1].copyout_float()
-        outputs = torch.tensor(outputs)
-        outputs = torch.reshape(outputs,(1,10))
-        total_time += (end_time - start_time)
-        _, predicted = torch.max(outputs, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum()
-    print('%d 张测试的准确率为: %f %%' % (total, 100 * correct / total))
-    print('BatchSize = %d, GoFusion 推理耗时 %f s' % (labels.size(0), total_time / (total / (labels.size(0)))))
-    del model, gofusion_model
