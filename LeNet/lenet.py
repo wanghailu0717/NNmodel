@@ -118,6 +118,9 @@ if args.train_epoch != 0:
                 start_0 = time.time()
     end = time.time()
     print('Finished Training: ' + str(end- start) + 's')
+    input_rand = torch.zeros((1,3,32,32))
+    net = net.to("cpu")
+    torch.onnx.export(net, input_rand, 'lenet' + '.onnx', input_names = ["image"], output_names = ["label"])
 
 # # 网络推理
 # correct = 0 # 预测正确的图片数
