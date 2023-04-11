@@ -28,6 +28,7 @@ parser.add_argument("--which_net", type=str, required=True, choices=["resnet18",
 parser.add_argument("--which_device", type=str, default="cpu", choices=["mlu", "cuda", "cpu"])
 parser.add_argument("--pytorch_infer", type=str, default="False", choices=["False", "True"])
 parser.add_argument("--gofusion_infer", type=str, default="False", choices=["False", "True"])
+parser.add_argument("--magicmind_infer", type=str, default="False", choices=["False", "True"])
 parser.add_argument("--onnx_file", type=str, default="")
 args = parser.parse_args()
 
@@ -280,13 +281,12 @@ if args.train_epoch != 0:
 ###################################################################################
 # Gofusion 运行
 if args.gofusion_infer == "True":
+    from pyinfinitensor.onnx import OnnxStub, backend
     if len(args.onnx_file) != 0:
         model = onnx.load(args.onnx_file)
     else:
         model = onnx.load('./'+ args.which_net +'.onnx')
     model, check = simplify(model)
-
-    from pyinfinitensor.onnx import OnnxStub, backend
     gofusion_model = OnnxStub(model, backend.bang_runtime())
     model = gofusion_model
     print("[INFO] Gofusion strat infer " + args.which_net + " network on " + args.which_device)
@@ -316,6 +316,7 @@ if args.gofusion_infer == "True":
 # Pytorch 运行
 # 将模型转换为对应版本
 if args.pytorch_infer == "True":
+    import torch_mlu
     if len(args.onnx_file) != 0:
         model = onnx.load(args.onnx_file)
     else:
@@ -346,4 +347,52 @@ if args.pytorch_infer == "True":
     print('%d 张测试的准确率为: %f %%' % (total, 100 * correct / total))
     print('BatchSize = %d, Pytorch 推理耗时 %f s' % (labels.size(0), total_time / (total / (labels.size(0)))))
     del torch_model, model
+
+###################################################################################
+# Magicmind 运行
+# 将模型转换为对应版本
+if args.magicmind_infer == "True":
+    import magicmind.python.runtime as mm
+    from magicmind.python.runtime import ModelKind, Network, Builder
+    from magicmind.python.runtime.parser import Parser
+    dev = mm.Device()
+    dev.id = 0
+    assert dev.active().ok()
+
+    parser = Parser(ModelKind.kOnnx)
+    network = Network()
+    builder = Builder()
+    if len(args.onnx_file) != 0:
+        parser.parse(network, args.onnx_file)
+    else:
+        parser.parse(network, './' + args.which_net + '.onnx')
+
+    model = builder.build_model("model", network) 
+
+    engine = model.create_i_engine()
+    context = engine.create_i_context()
+    queue = dev.create_queue()
+    inputs = context.create_inputs()
+
+    print("[INFO] Magicmind strat infer " + args.which_net + " network on " + args.which_device)
+    correct = 0 # 预测正确的图片数
+    total = 0 # 总共的图片数
+    total_time = 0.0
+    for data in tqdm(testloader):
+        images, labels = data
+        images = images.numpy()
+        inputs[0].from_numpy(images)
+        outputs = context.create_outputs(inputs)
+        start_time = time.time()
+        context.enqueue(inputs, outputs, queue)
+        queue.sync()
+        end_time = time.time()
+        outputs = outputs[0].asnumpy()
+        outputs = torch.tensor(outputs)
+        total_time += (end_time - start_time)
+        _, predicted = torch.max(outputs, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum()
+    print('%d 张测试的准确率为: %f %%' % (total, 100 * correct / total))
+    print('BatchSize = %d, Pytorch 推理耗时 %f s' % (labels.size(0), total_time / (total / (labels.size(0)))))
 
