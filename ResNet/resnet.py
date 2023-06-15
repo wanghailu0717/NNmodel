@@ -340,6 +340,8 @@ if args.pytorch_infer == "True":
         model = onnx.load('./'+ args.which_net +'.onnx')
     model, check = simplify(model)
 
+    device = args.which_device
+
     target_version = 13
     converted_model = version_converter.convert_version(model, target_version)
     torch_model = convert(converted_model)
