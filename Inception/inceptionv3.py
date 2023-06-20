@@ -381,7 +381,7 @@ testloader = torch.utils.data.DataLoader(
 criterion = nn.CrossEntropyLoss() # 交叉熵损失函数
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 # 定义硬件设备
-input_rand = torch.zeros((1,3,32,32))
+input_rand = torch.zeros((1,3,24,24))
 torch.onnx.export(net, input_rand, 'inceptionv3' + '_untrained' + '.onnx', input_names = ["image"], output_names = ["label"])
 
 # 网络训练
@@ -503,7 +503,7 @@ if args.pytorch_infer == "True":
     target_version = 13
     converted_model = version_converter.convert_version(model, target_version)
     torch_model = convert(converted_model)
-    torch_model.to(device)
+    torch_model.to(args.which_device)
     torch_model.eval()
     print("[INFO] Pytorch strat infer " + "inceptionv3" + " network on " + args.which_device)
     correct = 0 # 预测正确的图片数
@@ -512,8 +512,8 @@ if args.pytorch_infer == "True":
     with torch.no_grad():
         for data in tqdm(testloader):
             images, labels = data
-            images = images.to(device)
-            labels = labels.to(device)
+            images = images.to(args.which_device)
+            labels = labels.to(args.which_device)
             start_time = time.time()
             outputs = torch_model(images)
             end_time = time.time()
