@@ -181,6 +181,7 @@ def resnet152():
 
 # 定义数据预处理方式以及训练集与测试集并进行下载
 transform = transforms.Compose([
+        transforms.Resize((224,224)),
         transforms.ToTensor(), # 转为Tensor
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)), # 归一化
                              ])
@@ -224,7 +225,7 @@ criterion = nn.CrossEntropyLoss() # 交叉熵损失函数
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
 # 定义硬件设备
-input_rand = torch.zeros((1,3,24,24))
+input_rand = torch.zeros((1,3,224,224))
 torch.onnx.export(net, input_rand, args.which_net + '_untrained' + '.onnx', input_names = ["image"], output_names = ["label"])
 
 # 网络训练
