@@ -7,6 +7,8 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 from torchvision.transforms import ToPILImage
+from torch.utils.data import Sampler
+import random
 import time
 # 引入onnx 相关工具
 import onnx
@@ -29,6 +31,7 @@ parser.add_argument("--which_device", type=str, default="cpu", choices=["mlu", "
 parser.add_argument("--pytorch_infer", type=str, default="False", choices=["False", "True"])
 parser.add_argument("--gofusion_infer", type=str, default="False", choices=["False", "True"])
 parser.add_argument("--onnx_file", type=str, default="")
+parser.add_argument("--image_size", default="224", type=int, help="The width/height of image")
 args = parser.parse_args()
 
 print(vars(args))
@@ -144,7 +147,23 @@ def densenet161():
     return DenseNet(Bottleneck, [6,12,36,24], growth_rate=48, num_class=10)
 
 # 定义数据预处理方式以及训练集与测试集并进行下载
+class PercentageSampler(Sampler):
+    def __init__(self, data_source, percentage):
+        self.data_source = data_source
+        self.percentage = percentage
+        self.num_samples = int(len(data_source) * percentage) // args.infer_batch * args.infer_batch
+
+    def __iter__(self):
+        indices = list(range(len(self.data_source)))
+        random.shuffle(indices)
+        return iter(indices[:self.num_samples])
+
+    def __len__(self):
+        return self.num_samples
+
+
 transform = transforms.Compose([
+        transforms.Resize((args.image_size, args.image_size)),
         transforms.ToTensor(), # 转为Tensor
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)), # 归一化
                              ])
@@ -163,11 +182,13 @@ testset = torchvision.datasets.CIFAR10(
                     train=False, 
                     download=True, 
                     transform=transform)
+sampler = PercentageSampler(testset, 0.03)
 testloader = torch.utils.data.DataLoader(
                     testset,
                     batch_size=args.infer_batch, 
                     shuffle=False,
-                    num_workers=2)
+                    num_workers=2,
+                    sampler = sampler)
 ########################################################################
 # 定义网络
 if args.which_net == "densenet121":
@@ -186,7 +207,7 @@ else:
 criterion = nn.CrossEntropyLoss() # 交叉熵损失函数
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 # 定义硬件设备
-input_rand = torch.zeros((1,3,24,24))
+input_rand = torch.zeros((args.infer_batch,3,args.image_size,args.image_size))
 torch.onnx.export(net, input_rand, args.which_net + '_untrained' + '.onnx', input_names = ["image"], output_names = ["label"])
 
 # 网络训练
@@ -275,7 +296,7 @@ if args.gofusion_infer == "True":
         end_time = time.time()
         outputs = next(model.outputs.items().__iter__())[1].copyout_float()
         outputs = torch.tensor(outputs)
-        outputs = torch.reshape(outputs,(1,10))
+        outputs = torch.reshape(outputs,(args.infer_batch,10))
         total_time += (end_time - start_time)
         _, predicted = torch.max(outputs, 1)
         total += labels.size(0)
