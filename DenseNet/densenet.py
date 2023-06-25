@@ -30,8 +30,10 @@ parser.add_argument("--which_net", type=str, required=True, choices=["densenet12
 parser.add_argument("--which_device", type=str, default="cpu", choices=["mlu", "cuda", "cpu", "xpu"])
 parser.add_argument("--pytorch_infer", type=str, default="False", choices=["False", "True"])
 parser.add_argument("--gofusion_infer", type=str, default="False", choices=["False", "True"])
+parser.add_argument("--magicmind_infer", type=str, default="False", choices=["False", "True"])
 parser.add_argument("--onnx_file", type=str, default="")
 parser.add_argument("--image_size", default="224", type=int, help="The width/height of image")
+parser.add_argument("--sample", default="1", type=float, help="The percentage of the all images which to be infer.")
 args = parser.parse_args()
 
 print(vars(args))
@@ -182,7 +184,7 @@ testset = torchvision.datasets.CIFAR10(
                     train=False, 
                     download=True, 
                     transform=transform)
-sampler = PercentageSampler(testset, 0.03)
+sampler = PercentageSampler(testset, args.sample)
 testloader = torch.utils.data.DataLoader(
                     testset,
                     batch_size=args.infer_batch, 
@@ -349,3 +351,50 @@ if args.pytorch_infer == "True":
     print('BatchSize = %d, Pytorch 推理耗时 %f s' % (labels.size(0), total_time / (total / (labels.size(0)))))
     del torch_model, model
 
+###################################################################################
+# Magicmind 运行
+# 将模型转换为对应版本
+if args.magicmind_infer == "True":
+    import magicmind.python.runtime as mm
+    from magicmind.python.runtime import ModelKind, Network, Builder
+    from magicmind.python.runtime.parser import Parser
+    dev = mm.Device()
+    dev.id = 0
+    assert dev.active().ok()
+
+    parser = Parser(ModelKind.kOnnx)
+    network = Network()
+    builder = Builder()
+    if len(args.onnx_file) != 0:
+        parser.parse(network, args.onnx_file)
+    else:
+        parser.parse(network, './' + args.which_net + '.onnx')
+
+    model = builder.build_model("model", network)
+
+    engine = model.create_i_engine()
+    context = engine.create_i_context()
+    queue = dev.create_queue()
+    inputs = context.create_inputs()
+
+    print("[INFO] Magicmind strat infer " + args.which_net + " network on " + args.which_device)
+    correct = 0 # 预测正确的图片数
+    total = 0 # 总共的图片数
+    total_time = 0.0
+    for data in tqdm(testloader):
+        images, labels = data
+        images = images.numpy()
+        inputs[0].from_numpy(images)
+        outputs = context.create_outputs(inputs)
+        start_time = time.time()
+        context.enqueue(inputs, outputs, queue)
+        queue.sync()
+        end_time = time.time()
+        outputs = outputs[0].asnumpy()
+        outputs = torch.tensor(outputs)
+        total_time += (end_time - start_time)
+        _, predicted = torch.max(outputs, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum()
+    print('%d 张测试的准确率为: %f %%' % (total, 100 * correct / total))
+    print('BatchSize = %d, Pytorch 推理耗时 %f s' % (labels.size(0), total_time / (total / (labels.size(0)))))

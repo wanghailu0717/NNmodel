@@ -33,6 +33,7 @@ parser.add_argument("--gofusion_infer", type=str, default="False", choices=["Fal
 parser.add_argument("--magicmind_infer", type=str, default="False", choices=["False", "True"])
 parser.add_argument("--onnx_file", type=str, default="")
 parser.add_argument("--image_size", default="224", type=int, help="The width/height of image")
+parser.add_argument("--sample", default="1", type=float, help="The percentage of the all images which to be infer.")
 args = parser.parse_args()
 
 print(vars(args))
@@ -217,7 +218,7 @@ testset = torchvision.datasets.CIFAR10(
                     train=False, 
                     download=True, 
                     transform=transform)
-sampler = PercentageSampler(testset, 0.3)
+sampler = PercentageSampler(testset, args.sample)
 testloader = torch.utils.data.DataLoader(
                     testset,
                     batch_size=args.infer_batch, 
