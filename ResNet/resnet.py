@@ -38,6 +38,42 @@ args = parser.parse_args()
 
 print(vars(args))
 
+# 网络简化工具
+from typing import Any, List, Optional
+from onnx import ModelProto, NodeProto
+
+def eliminate_batchnorm(model: ModelProto):
+    class LinkedTensor:
+        node: NodeProto
+        slot: int
+
+        def __init__(self, node: NodeProto, slot: int) -> None:
+            self.node = node
+            self.slot = slot
+
+    tensors: dict[str, LinkedTensor] = {}
+    targets: dict[str, list[LinkedTensor]] = {}
+    batchnorm: list[NodeProto] = []
+
+    for node in model.graph.node:
+        for j, tensor in enumerate(node.output):
+            tensors[tensor] = LinkedTensor(node, j)
+        if node.op_type == "BatchNormalization":
+            batchnorm.append(node)
+        else:
+            for slot, t in enumerate(node.input):
+                source = tensors.get(t)
+                if source != None and source.node.op_type == "BatchNormalization":
+                    targets.setdefault(source.node.name, []).append(
+                        LinkedTensor(node, slot)
+                    )
+
+    for node in batchnorm:
+        for target in targets[node.name]:
+            target.node.input[target.slot] = node.input[0]
+        model.graph.node.remove(node)
+
+
 # 定义网络并显示
 class BasicBlock(nn.Module):
     """Basic Block for resnet 18 and resnet 34
@@ -240,13 +276,16 @@ elif args.which_net == "resnet152":
 else:
     print("Non-existent network")
     sys.exit()
+
+evalnet = net
+evalnet.eval()
 # 定义损失函数与优化器
 criterion = nn.CrossEntropyLoss() # 交叉熵损失函数
-optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+optimizer = optim.SGD(evalnet.parameters(), lr=0.001, momentum=0.9)
 
 # 定义硬件设备
 input_rand = torch.zeros((args.infer_batch,3,args.image_size,args.image_size))
-torch.onnx.export(net, input_rand, args.which_net + '_untrained' + '.onnx', input_names = ["image"], output_names = ["label"])
+torch.onnx.export(evalnet, input_rand, args.which_net + '_untrained' + '.onnx', input_names = ["image"], output_names = ["label"])
 
 # 网络训练
 if args.train_epoch != 0:
@@ -311,6 +350,8 @@ if args.gofusion_infer == "True":
     else:
         model = onnx.load('./'+ args.which_net +'.onnx')
     model, check = simplify(model)
+    eliminate_batchnorm(model)
+
     if args.which_device == "cpu":
         gofusion_model = OnnxStub(model, backend.cpu_runtime())
     elif args.which_device == "mlu":
@@ -319,8 +360,10 @@ if args.gofusion_infer == "True":
         gofusion_model = OnnxStub(model, backend.cuda_runtime())
     elif args.which_device == "xpu":
         gofusion_model = OnnxStub(model, backend.xpu_runtime())
+
     model = gofusion_model
     model.init()
+    model.convert_nhwc()
     print("[INFO] Gofusion strat infer " + args.which_net + " network on " + args.which_device)
     correct = 0 # 预测正确的图片数
     total = 0 # 总共的图片数
